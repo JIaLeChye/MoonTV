@@ -82,5 +82,9 @@
       "prettier -w"
     ]
   },
+  "engines": {
+    "node": "20.10.x",
+    "pnpm": "10.14.0"
+  },
   "packageManager": "pnpm@10.14.0"
 }
