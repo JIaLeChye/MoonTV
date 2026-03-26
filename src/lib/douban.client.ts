@@ -39,29 +39,17 @@ interface DoubanListApiResponse {
 /**
  * 带超时的 fetch 请求
  */
-async function fetchWithTimeout(
-  url: string,
-  fallbackProxy = false
-): Promise<Response> {
+async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
   // 检查是否使用代理
-  const proxyUrl = fallbackProxy
-    ? 'https://cors-anywhere.com/'
-    : getDoubanProxyUrl();
-  const finalUrl = fallbackProxy
-    ? `${proxyUrl}${url}`
-    : proxyUrl
-    ? `${proxyUrl}${encodeURIComponent(url)}`
-    : url;
+  const proxyUrl = getDoubanProxyUrl();
+  const finalUrl = proxyUrl ? `${proxyUrl}${encodeURIComponent(url)}` : url;
 
   const fetchOptions: RequestInit = {
     signal: controller.signal,
     headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      Referer: 'https://movie.douban.com/',
       Accept: 'application/json, text/plain, */*',
     },
   };
@@ -87,8 +75,7 @@ export function shouldUseDoubanClient(): boolean {
  * 浏览器端豆瓣分类数据获取函数
  */
 export async function fetchDoubanCategories(
-  params: DoubanCategoriesParams,
-  fallbackProxy = false
+  params: DoubanCategoriesParams
 ): Promise<DoubanResult> {
   const { kind, category, type, pageLimit = 20, pageStart = 0 } = params;
 
@@ -112,7 +99,7 @@ export async function fetchDoubanCategories(
   const target = `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
 
   try {
-    const response = await fetchWithTimeout(target, fallbackProxy);
+    const response = await fetchWithTimeout(target);
 
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
@@ -164,7 +151,7 @@ export async function getDoubanCategories(
     );
 
     if (!response.ok) {
-      return fetchDoubanCategories(params, true);
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
     return response.json();
@@ -191,7 +178,7 @@ export async function getDoubanList(
     );
 
     if (!response.ok) {
-      return fetchDoubanList(params, true);
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
     return response.json();
@@ -199,8 +186,7 @@ export async function getDoubanList(
 }
 
 export async function fetchDoubanList(
-  params: DoubanListParams,
-  fallbackProxy = false
+  params: DoubanListParams
 ): Promise<DoubanResult> {
   const { tag, type, pageLimit = 20, pageStart = 0 } = params;
 
@@ -224,7 +210,7 @@ export async function fetchDoubanList(
   const target = `https://movie.douban.com/j/search_subjects?type=${type}&tag=${tag}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
 
   try {
-    const response = await fetchWithTimeout(target, fallbackProxy);
+    const response = await fetchWithTimeout(target);
 
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
