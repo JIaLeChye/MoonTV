@@ -58,6 +58,7 @@ export default function VideoCard({
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [imgSrc, setImgSrc] = useState('');
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -107,6 +108,18 @@ export default function VideoCard({
       ? 'movie'
       : 'tv'
     : type;
+
+  // 同步海报 URL
+  useEffect(() => {
+    setImgSrc(processImageUrl(actualPoster));
+  }, [actualPoster]);
+
+  // 图片加载失败时通过服务端代理重试
+  const handleImageError = useCallback(() => {
+    if (actualPoster && !imgSrc.includes('/api/image-proxy')) {
+      setImgSrc(`/api/image-proxy?url=${encodeURIComponent(actualPoster)}`);
+    }
+  }, [actualPoster, imgSrc]);
 
   // 获取收藏状态
   useEffect(() => {
@@ -274,12 +287,13 @@ export default function VideoCard({
         {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
         {/* 图片 */}
         <Image
-          src={processImageUrl(actualPoster)}
+          src={imgSrc || processImageUrl(actualPoster)}
           alt={actualTitle}
           fill
           className='object-cover'
           referrerPolicy='no-referrer'
-          onLoadingComplete={() => setIsLoading(true)}
+          onLoad={() => setIsLoading(true)}
+          onError={handleImageError}
         />
 
         {/* 悬浮遮罩 */}
