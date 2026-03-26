@@ -36,7 +36,14 @@ export function processImageUrl(originalUrl: string): string {
   if (!originalUrl) return originalUrl;
 
   const proxyUrl = getImageProxyUrl();
-  if (!proxyUrl) return originalUrl;
+  if (!proxyUrl) {
+    // Douban image hosts often reject direct browser requests with 418.
+    // Fall back to the built-in image proxy when no custom proxy is configured.
+    if (/https?:\/\/img\d*\.doubanio\.com\//i.test(originalUrl)) {
+      return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
+    }
+    return originalUrl;
+  }
 
   return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
 }
