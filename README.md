@@ -2,6 +2,10 @@
 
 # MoonTV
 
+> **更新说明（2026-03）**：
+> - 已移除自动检测新版本功能，原因是上游仓库（LunaTechLab/MoonTV）已关闭，版本检查 URL 无法访问。
+> - 已修复豆瓣数据获取问题：移除了不稳定的 `cors-anywhere.com` 作为备用代理，改为在请求头中正确设置 `Origin` 字段，并优先使用服务端 API 获取豆瓣数据。
+
 <div align="center">
   <img src="public/logo.png" alt="LibreTV Logo" width="120">
 </div>
