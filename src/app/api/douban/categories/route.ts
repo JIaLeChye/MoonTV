@@ -20,7 +20,168 @@ interface DoubanCategoryApiResponse {
   }>;
 }
 
+interface JustOneApiRecentHotItem {
+  id?: string | number;
+  title?: string;
+  name?: string;
+  card_subtitle?: string;
+  year?: string | number;
+  cover?: string;
+  poster?: string;
+  pic?: {
+    large?: string;
+    normal?: string;
+  };
+  rating?:
+    | string
+    | number
+    | {
+        value?: number;
+      };
+  image?: string;
+  cover_url?: string;
+}
+
+interface JustOneApiResponse<T> {
+  code: number;
+  message: string | null;
+  data: T;
+}
+
 export const runtime = 'edge';
+
+function getJustOneApiToken(): string | null {
+  const token =
+    process.env.JUSTONEAPI_TOKEN || process.env.NEXT_PUBLIC_JUSTONEAPI_TOKEN;
+  return token && token.trim() ? token.trim() : null;
+}
+
+function getJustOneApiBaseUrl(): string {
+  return (
+    process.env.JUSTONEAPI_BASE_URL || 'https://api.justoneapi.com'
+  ).replace(/\/$/, '');
+}
+
+function getJustOneApiRecentHotUrl(
+  kind: 'movie' | 'tv',
+  page: number
+): string | null {
+  const token = getJustOneApiToken();
+  if (!token) return null;
+
+  const endpoint =
+    kind === 'movie' ? 'get-recent-hot-movie' : 'get-recent-hot-tv';
+
+  return `${getJustOneApiBaseUrl()}/api/douban/${endpoint}/v1?token=${encodeURIComponent(
+    token
+  )}&page=${page}`;
+}
+
+function getJustOneApiItems(data: unknown): JustOneApiRecentHotItem[] {
+  if (Array.isArray(data)) {
+    return data as JustOneApiRecentHotItem[];
+  }
+
+  if (data && typeof data === 'object') {
+    const payload = data as Record<string, unknown>;
+    for (const key of ['items', 'list', 'records', 'data']) {
+      const value = payload[key];
+      if (Array.isArray(value)) {
+        return value as JustOneApiRecentHotItem[];
+      }
+    }
+  }
+
+  return [];
+}
+
+function getJustOneApiPoster(item: JustOneApiRecentHotItem): string {
+  return (
+    item.pic?.normal ||
+    item.pic?.large ||
+    item.cover ||
+    item.poster ||
+    item.image ||
+    item.cover_url ||
+    ''
+  );
+}
+
+function getJustOneApiRate(item: JustOneApiRecentHotItem): string {
+  if (typeof item.rating === 'number') {
+    return item.rating.toFixed(1);
+  }
+
+  if (typeof item.rating === 'string') {
+    return item.rating;
+  }
+
+  if (item.rating && typeof item.rating === 'object') {
+    const rating = item.rating as { value?: number };
+    if (typeof rating.value === 'number') {
+      return rating.value.toFixed(1);
+    }
+  }
+
+  return '';
+}
+
+function mapJustOneApiItem(item: JustOneApiRecentHotItem): DoubanItem {
+  return {
+    id: String(item.id ?? ''),
+    title: item.title || item.name || '',
+    poster: getJustOneApiPoster(item),
+    rate: getJustOneApiRate(item),
+    year:
+      item.card_subtitle?.match(/(\d{4})/)?.[1] ||
+      (typeof item.year === 'number' || typeof item.year === 'string'
+        ? String(item.year)
+        : ''),
+  };
+}
+
+async function fetchJustOneApiRecentHot(
+  kind: 'movie' | 'tv',
+  pageLimit: number,
+  pageStart: number
+): Promise<DoubanItem[]> {
+  const page = Math.floor(pageStart / pageLimit) + 1;
+  const target = getJustOneApiRecentHotUrl(kind, page);
+
+  if (!target) {
+    throw new Error('未配置 JUSTONEAPI_TOKEN，无法使用 JustOneAPI 兜底');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(target, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as JustOneApiResponse<unknown>;
+
+    if (payload.code !== 0) {
+      throw new Error(
+        payload.message || `JustOneAPI error! Code: ${payload.code}`
+      );
+    }
+
+    return getJustOneApiItems(payload.data)
+      .slice(0, pageLimit)
+      .map(mapJustOneApiItem);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -91,9 +252,36 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: '获取豆瓣数据失败', details: (error as Error).message },
-      { status: 500 }
-    );
+    try {
+      const fallbackList = await fetchJustOneApiRecentHot(
+        kind as 'movie' | 'tv',
+        pageLimit,
+        pageStart
+      );
+
+      const fallbackResponse: DoubanResult = {
+        code: 200,
+        message: '获取成功',
+        list: fallbackList,
+      };
+
+      const cacheTime = await getCacheTime();
+      return NextResponse.json(fallbackResponse, {
+        headers: {
+          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
+          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+          'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+        },
+      });
+    } catch (fallbackError) {
+      return NextResponse.json(
+        {
+          error: '获取豆瓣数据失败',
+          details: (error as Error).message,
+          fallbackDetails: (fallbackError as Error).message,
+        },
+        { status: 500 }
+      );
+    }
   }
 }
