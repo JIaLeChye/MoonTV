@@ -8,6 +8,7 @@ module.exports = {
       'always',
       [
         'feat',
+        'upgrade',
         'fix',
         'docs',
         'chore',
