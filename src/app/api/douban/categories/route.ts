@@ -50,6 +50,17 @@ interface JustOneApiResponse<T> {
 
 export const runtime = 'edge';
 
+function getDoubanProxyUrl(): string | null {
+  const proxyUrl =
+    process.env.DOUBAN_PROXY || process.env.NEXT_PUBLIC_DOUBAN_PROXY;
+  return proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : null;
+}
+
+function getDoubanTargetUrl(target: string): string {
+  const proxyUrl = getDoubanProxyUrl();
+  return proxyUrl ? `${proxyUrl}${encodeURIComponent(target)}` : target;
+}
+
 function getJustOneApiToken(): string | null {
   const token =
     process.env.JUSTONEAPI_TOKEN || process.env.NEXT_PUBLIC_JUSTONEAPI_TOKEN;
@@ -156,7 +167,7 @@ async function fetchJustOneApiRecentHot(
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(target, {
+    const response = await fetch(getDoubanTargetUrl(target), {
       signal: controller.signal,
       headers: {
         Accept: 'application/json, text/plain, */*',
@@ -169,7 +180,7 @@ async function fetchJustOneApiRecentHot(
 
     const payload = (await response.json()) as JustOneApiResponse<unknown>;
 
-    if (payload.code !== 0) {
+    if (payload.code !== 0 && payload.code !== 200) {
       throw new Error(
         payload.message || `JustOneAPI error! Code: ${payload.code}`
       );
@@ -226,7 +237,13 @@ export async function GET(request: Request) {
 
   try {
     // 调用豆瓣 API
-    const doubanData = await fetchDoubanData<DoubanCategoryApiResponse>(target);
+    const doubanData = await fetchDoubanData<DoubanCategoryApiResponse>(
+      getDoubanTargetUrl(target)
+    );
+
+    if (!Array.isArray(doubanData.items)) {
+      throw new Error('豆瓣接口返回了无效的数据格式');
+    }
 
     // 转换数据格式
     const list: DoubanItem[] = doubanData.items.map((item) => ({
