@@ -50,15 +50,29 @@ interface JustOneApiResponse<T> {
 
 export const runtime = 'edge';
 
+const DOUBAN_MIRROR_BASE_URLS = [
+  'https://m.douban.cmliussss.net',
+  'https://m.douban.cmliussss.com',
+];
+
 function getDoubanProxyUrl(): string | null {
   const proxyUrl =
     process.env.DOUBAN_PROXY || process.env.NEXT_PUBLIC_DOUBAN_PROXY;
   return proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : null;
 }
 
-function getDoubanTargetUrl(target: string): string {
+function getDoubanTargetUrls(target: string): string[] {
   const proxyUrl = getDoubanProxyUrl();
-  return proxyUrl ? `${proxyUrl}${encodeURIComponent(target)}` : target;
+  const targets = proxyUrl ? [`${proxyUrl}${encodeURIComponent(target)}`] : [];
+
+  targets.push(
+    ...DOUBAN_MIRROR_BASE_URLS.map((baseUrl) =>
+      target.replace('https://m.douban.com', baseUrl)
+    ),
+    target
+  );
+
+  return [...new Set(targets)];
 }
 
 function getJustOneApiToken(): string | null {
@@ -167,7 +181,7 @@ async function fetchJustOneApiRecentHot(
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(getDoubanTargetUrl(target), {
+    const response = await fetch(target, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json, text/plain, */*',
@@ -192,6 +206,30 @@ async function fetchJustOneApiRecentHot(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function fetchDoubanCategoryData(
+  target: string
+): Promise<DoubanCategoryApiResponse> {
+  const errors: string[] = [];
+
+  for (const candidate of getDoubanTargetUrls(target)) {
+    try {
+      const doubanData = await fetchDoubanData<DoubanCategoryApiResponse>(
+        candidate
+      );
+
+      if (!Array.isArray(doubanData.items)) {
+        throw new Error('豆瓣接口返回了无效的数据格式');
+      }
+
+      return doubanData;
+    } catch (error) {
+      errors.push(`${candidate}: ${(error as Error).message}`);
+    }
+  }
+
+  throw new Error(`所有豆瓣数据源均请求失败: ${errors.join('; ')}`);
 }
 
 export async function GET(request: Request) {
@@ -237,13 +275,7 @@ export async function GET(request: Request) {
 
   try {
     // 调用豆瓣 API
-    const doubanData = await fetchDoubanData<DoubanCategoryApiResponse>(
-      getDoubanTargetUrl(target)
-    );
-
-    if (!Array.isArray(doubanData.items)) {
-      throw new Error('豆瓣接口返回了无效的数据格式');
-    }
+    const doubanData = await fetchDoubanCategoryData(target);
 
     // 转换数据格式
     const list: DoubanItem[] = doubanData.items.map((item) => ({
